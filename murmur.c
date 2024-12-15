@@ -6,6 +6,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <time.h>
+#include <zlib.h>
 
 #define MURMUR_VAULT ".murmur"
 #define BLOCKS_DIR ".murmur/blocks"
@@ -57,6 +58,17 @@ void store_file(const char *filename) {
 
         // Deduplicate block globally
         if (access(block_path, F_OK) == -1) {
+            // Compress the block
+            char compressed[4096];
+            uLongf compressed_size = sizeof(compressed);
+            if (compress((Bytef *)compressed, &compressed_size, (const Bytef *)buffer, bytes_read) != Z_OK) {
+                perror("Compression failed");
+                fclose(file);
+                fclose(index_file);
+                return;
+            }
+
+            // Write the compressed block to the vault
             FILE *block_file = fopen(block_path, "wb");
             if (!block_file) {
                 perror("Failed to create block file");
@@ -64,9 +76,11 @@ void store_file(const char *filename) {
                 fclose(index_file);
                 return;
             }
-            fwrite(buffer, 1, bytes_read, block_file);
+
+            fwrite(compressed, 1, compressed_size, block_file);
             fclose(block_file);
-            printf("Stored new block: %08x\n", hash);
+            printf("Stored new compressed block: %08x (original: %lu bytes, compressed: %lu bytes)\n",
+                   hash, bytes_read, compressed_size);
         } else {
             printf("Block already exists: %08x\n", hash);
         }
@@ -162,12 +176,21 @@ void restore_snapshot(const char *snapshot_name) {
 
             FILE *block_file = fopen(block_path, "rb");
             if (block_file) {
-                char buffer[4096];
-                size_t bytes_read;
-                while ((bytes_read = fread(buffer, 1, sizeof(buffer), block_file)) > 0) {
-                    fwrite(buffer, 1, bytes_read, output_file);
-                }
+                // Read the compressed block
+                char compressed[4096];
+                char decompressed[4096];
+                size_t compressed_size = fread(compressed, 1, sizeof(compressed), block_file);
                 fclose(block_file);
+
+                // Decompress the block
+                uLongf decompressed_size = sizeof(decompressed);
+                if (uncompress((Bytef *)decompressed, &decompressed_size, (const Bytef *)compressed, compressed_size) != Z_OK) {
+                    perror("Decompression failed");
+                    continue;
+                }
+
+                // Write the decompressed data to the output file
+                fwrite(decompressed, 1, decompressed_size, output_file);
             } else {
                 perror("Failed to open block file");
             }
@@ -177,6 +200,48 @@ void restore_snapshot(const char *snapshot_name) {
     if (output_file) fclose(output_file);
     fclose(snapshot_file);
     printf("Snapshot restored: %s\n", snapshot_name);
+}
+
+// Send snapshots and blocks to a remote
+void send_to_remote(const char *remote_path) {
+    char command[512];
+    snprintf(command, sizeof(command), "rsync -av %s/ %s/", SNAPSHOTS_DIR, remote_path);
+    if (system(command) == 0) {
+        printf("Snapshots sent to remote: %s\n", remote_path);
+    } else {
+        printf("Failed to send snapshots to remote.\n");
+    }
+
+    snprintf(command, sizeof(command), "rsync -av %s/ %s/blocks/", BLOCKS_DIR, remote_path);
+    if (system(command) == 0) {
+        printf("Blocks sent to remote: %s\n", remote_path);
+    } else {
+        printf("Failed to send blocks to remote.\n");
+    }
+}
+
+// Fetch snapshot and blocks from a remote
+void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
+    char command[512];
+
+    // Fetch the snapshot
+    snprintf(command, sizeof(command), "rsync -av %s/%s %s/", remote_path, snapshot_name, SNAPSHOTS_DIR);
+    if (system(command) == 0) {
+        printf("Snapshot %s fetched from remote.\n", snapshot_name);
+    } else {
+        printf("Failed to fetch snapshot from remote.\n");
+        return;
+    }
+
+    // Fetch blocks
+    snprintf(command, sizeof(command), "rsync -av %s/blocks/ %s/blocks/", remote_path, MURMUR_VAULT);
+    if (system(command) == 0) {
+        printf("Blocks fetched from remote.\n");
+    } else {
+        printf("Failed to fetch blocks from remote.\n");
+    }
+
+    restore_snapshot(snapshot_name);
 }
 
 // Placeholder for the MurmurHash implementation
@@ -207,6 +272,10 @@ int main(int argc, char *argv[]) {
         create_snapshot();
     } else if (strcmp(argv[1], "restore") == 0 && argc == 3) {
         restore_snapshot(argv[2]);
+    } else if (strcmp(argv[1], "send") == 0 && argc == 3) {
+        send_to_remote(argv[2]);
+    } else if (strcmp(argv[1], "fetch") == 0 && argc == 4) {
+        fetch_from_remote(argv[2], argv[3]);
     } else {
         printf("Unknown command: %s\n", argv[1]);
     }

@@ -1,15 +1,12 @@
-# Variables
 CC = cc
 CFLAGS = -Wall -Wextra -O2 -std=c99
+LDFLAGS = -lz
 TARGET = murmur
 
-# Default target: build the tool
 all: $(TARGET)
 
-# Compile the tool
 $(TARGET): murmur.c
-	$(CC) $(CFLAGS) $< -o $@
+	$(CC) $(CFLAGS) murmur.c -o $(TARGET) $(LDFLAGS)
 
-# Clean up build artifacts
 clean:
 	rm -f $(TARGET)
