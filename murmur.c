@@ -13,10 +13,10 @@
 #define SNAPSHOTS_DIR ".murmur/snapshots"
 #define INDEX_DIR ".murmur/index"
 
-// Placeholder for MurmurHash function
+// MurmurHash function placeholder
 uint32_t murmurhash(const void *key, int len, uint32_t seed);
 
-// Initialize the deduplication vault
+// inits the whole vault structure
 void init_vault() {
     if (mkdir(MURMUR_VAULT, 0755) == -1) {
         perror("Failed to create .murmur vault");
@@ -29,7 +29,7 @@ void init_vault() {
     printf("Initialized Murmur vault in %s\n", MURMUR_VAULT);
 }
 
-// Store a file by splitting it into deduplicated blocks
+// store a file splitting it into deduplicated blocks
 void store_file(const char *filename) {
     FILE *file = fopen(filename, "rb");
     if (!file) {
@@ -40,7 +40,7 @@ void store_file(const char *filename) {
     char buffer[4096]; // 4KB block size
     size_t bytes_read;
 
-    // Create or update the file's block mapping
+    // this is where we record which blocks belong to the file
     char index_path[256];
     snprintf(index_path, sizeof(index_path), "%s/index/%s.index", MURMUR_VAULT, filename);
     FILE *index_file = fopen(index_path, "w");
@@ -50,15 +50,16 @@ void store_file(const char *filename) {
         return;
     }
 
-    // Process each block in the file
+    // read file block by block
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        uint32_t hash = murmurhash(buffer, bytes_read, 42); // Generate block hash
+        // generate block hash
+        uint32_t hash = murmurhash(buffer, bytes_read, 42); 
         char block_path[256];
         snprintf(block_path, sizeof(block_path), "%s/blocks/%08x", MURMUR_VAULT, hash);
 
-        // Deduplicate block globally
+        // deduplication happens here, no duplicate blocks saved
         if (access(block_path, F_OK) == -1) {
-            // Compress the block
+            // compress block before saving
             char compressed[4096];
             uLongf compressed_size = sizeof(compressed);
             if (compress((Bytef *)compressed, &compressed_size, (const Bytef *)buffer, bytes_read) != Z_OK) {
@@ -68,7 +69,7 @@ void store_file(const char *filename) {
                 return;
             }
 
-            // Write the compressed block to the vault
+            // write compressed block to the vault
             FILE *block_file = fopen(block_path, "wb");
             if (!block_file) {
                 perror("Failed to create block file");
@@ -85,7 +86,7 @@ void store_file(const char *filename) {
             printf("Block already exists: %08x\n", hash);
         }
 
-        // Map the block to the file
+        // record block hash to the index file
         fprintf(index_file, "%08x\n", hash);
     }
 
@@ -94,7 +95,7 @@ void store_file(const char *filename) {
     printf("File '%s' stored successfully.\n", filename);
 }
 
-// Create a snapshot of the current state
+// snapshot
 void create_snapshot() {
     time_t now = time(NULL);
     char snapshot_name[64];
@@ -115,9 +116,9 @@ void create_snapshot() {
 
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] == '.') continue; // Skip hidden files
+        if (entry->d_name[0] == '.') continue; // skip hidden files
 
-        // Write file-to-block mapping
+        // write each files index to the snapshot
         fprintf(snapshot_file, "FILE %s\n", entry->d_name);
 
         char index_path[256];
@@ -127,7 +128,7 @@ void create_snapshot() {
         if (index_file) {
             char hash[64];
             while (fgets(hash, sizeof(hash), index_file)) {
-                fprintf(snapshot_file, "BLOCK %s", hash); // Include newlines
+                fprintf(snapshot_file, "BLOCK %s", hash); // include newlines
             }
             fclose(index_file);
         }
@@ -138,7 +139,7 @@ void create_snapshot() {
     printf("Snapshot created: %s\n", snapshot_name);
 }
 
-// Restore files from a snapshot
+// restore from a snapshot
 void restore_snapshot(const char *snapshot_name) {
     char snapshot_path[256];
     snprintf(snapshot_path, sizeof(snapshot_path), "%s/snapshots/%s", MURMUR_VAULT, snapshot_name);
@@ -176,20 +177,20 @@ void restore_snapshot(const char *snapshot_name) {
 
             FILE *block_file = fopen(block_path, "rb");
             if (block_file) {
-                // Read the compressed block
+                // read compressed block
                 char compressed[4096];
                 char decompressed[4096];
                 size_t compressed_size = fread(compressed, 1, sizeof(compressed), block_file);
                 fclose(block_file);
 
-                // Decompress the block
+                // decompress block
                 uLongf decompressed_size = sizeof(decompressed);
                 if (uncompress((Bytef *)decompressed, &decompressed_size, (const Bytef *)compressed, compressed_size) != Z_OK) {
                     perror("Decompression failed");
                     continue;
                 }
 
-                // Write the decompressed data to the output file
+                // write decompressed data to output file
                 fwrite(decompressed, 1, decompressed_size, output_file);
             } else {
                 perror("Failed to open block file");
@@ -202,7 +203,7 @@ void restore_snapshot(const char *snapshot_name) {
     printf("Snapshot restored: %s\n", snapshot_name);
 }
 
-// Send snapshots and blocks to a remote
+// send to remote
 void send_to_remote(const char *remote_path) {
     char command[512];
     snprintf(command, sizeof(command), "rsync -av %s/ %s/", SNAPSHOTS_DIR, remote_path);
@@ -220,11 +221,11 @@ void send_to_remote(const char *remote_path) {
     }
 }
 
-// Fetch snapshot and blocks from a remote
+// fetch snapshot and blocks from remote
 void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
     char command[512];
 
-    // Fetch the snapshot
+    // fetch snapshot
     snprintf(command, sizeof(command), "rsync -av %s/%s %s/", remote_path, snapshot_name, SNAPSHOTS_DIR);
     if (system(command) == 0) {
         printf("Snapshot %s fetched from remote.\n", snapshot_name);
@@ -233,7 +234,7 @@ void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
         return;
     }
 
-    // Fetch blocks
+    // fetch blocks
     snprintf(command, sizeof(command), "rsync -av %s/blocks/ %s/blocks/", remote_path, MURMUR_VAULT);
     if (system(command) == 0) {
         printf("Blocks fetched from remote.\n");
@@ -244,7 +245,7 @@ void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
     restore_snapshot(snapshot_name);
 }
 
-// Placeholder for the MurmurHash implementation
+// MurmurHash implementation
 uint32_t murmurhash(const void *key, int len, uint32_t seed) {
     uint32_t hash = seed;
     const uint8_t *data = (const uint8_t *)key;
