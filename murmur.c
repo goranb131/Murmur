@@ -294,6 +294,74 @@ void restore_snapshot(const char *snapshot_name) {
     printf("[INFO] Snapshot restored: %s\n", snapshot_name);
 }
 
+void send_to_remote(const char *remote_path) {
+    char command[512];
+
+    // Send blocks
+    snprintf(command, sizeof(command), "rsync -av --progress %s/ %s/blocks/", BLOCKS_DIR, remote_path);
+    printf("[DEBUG] Sending blocks to remote: %s\n", remote_path);
+    if (system(command) != 0) {
+        printf("[ERROR] Failed to send blocks to remote.\n");
+        return;
+    }
+    printf("[INFO] Blocks sent successfully.\n");
+
+    // Send snapshots
+    snprintf(command, sizeof(command), "rsync -av --progress %s/ %s/snapshots/", SNAPSHOTS_DIR, remote_path);
+    printf("[DEBUG] Sending snapshots to remote: %s\n", remote_path);
+    if (system(command) != 0) {
+        printf("[ERROR] Failed to send snapshots to remote.\n");
+        return;
+    }
+    printf("[INFO] Snapshots sent successfully.\n");
+
+    // Send indexes
+    snprintf(command, sizeof(command), "rsync -av --progress %s/ %s/index/", INDEX_DIR, remote_path);
+    printf("[DEBUG] Sending indexes to remote: %s\n", remote_path);
+    if (system(command) != 0) {
+        printf("[ERROR] Failed to send indexes to remote.\n");
+        return;
+    }
+    printf("[INFO] Indexes sent successfully.\n");
+}
+
+void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
+    char command[512];
+
+    // Fetch blocks
+    snprintf(command, sizeof(command), "rsync -av --progress %s/blocks/ %s", remote_path, BLOCKS_DIR);
+    printf("[DEBUG] Fetching blocks from remote: %s\n", remote_path);
+    if (system(command) != 0) {
+        printf("[ERROR] Failed to fetch blocks from remote.\n");
+        return;
+    }
+    printf("[INFO] Blocks fetched successfully.\n");
+
+    // Fetch snapshots
+    snprintf(command, sizeof(command), "rsync -av --progress %s/snapshots/ %s", remote_path, SNAPSHOTS_DIR);
+    printf("[DEBUG] Fetching snapshots from remote: %s\n", remote_path);
+    if (system(command) != 0) {
+        printf("[ERROR] Failed to fetch snapshots from remote.\n");
+        return;
+    }
+    printf("[INFO] Snapshots fetched successfully.\n");
+
+    // Fetch indexes
+    snprintf(command, sizeof(command), "rsync -av --progress %s/index/ %s", remote_path, INDEX_DIR);
+    printf("[DEBUG] Fetching indexes from remote: %s\n", remote_path);
+    if (system(command) != 0) {
+        printf("[ERROR] Failed to fetch indexes from remote.\n");
+        return;
+    }
+    printf("[INFO] Indexes fetched successfully.\n");
+
+    // Restore the specified snapshot
+    char snapshot_path[512];
+    snprintf(snapshot_path, sizeof(snapshot_path), "%s/%s", SNAPSHOTS_DIR, snapshot_name);
+    printf("[DEBUG] Restoring snapshot: %s\n", snapshot_path);
+    restore_snapshot(snapshot_name);
+}
+
 uint32_t murmurhash(const void *key, int len, uint32_t seed) {
     uint32_t hash = seed;
     const uint8_t *data = (const uint8_t *)key;
@@ -321,6 +389,10 @@ int main(int argc, char *argv[]) {
         create_snapshot();
     } else if (strcmp(argv[1], "restore") == 0 && argc == 3) {
         restore_snapshot(argv[2]);
+    } else if (strcmp(argv[1], "send") == 0 && argc == 3) {
+        send_to_remote(argv[2]);
+    } else if (strcmp(argv[1], "fetch") == 0 && argc == 4) {
+        fetch_from_remote(argv[2], argv[3]);
     } else {
         printf("Unknown command: %s\n", argv[1]);
     }
