@@ -1,0 +1,89 @@
+.TH MURMUR 1 "December 2024" "Murmur Backup Tool" "User Commands"
+.SH NAME
+murmur \- lightweight file and directory snapshot and backup tool
+
+.SH SYNOPSIS
+.B murmur
+.RI <command> " [args...]"
+
+.SH DESCRIPTION
+Murmur is a userspace file and directory backup tool that provides snapshotting, deduplication, and compression capabilities. Using simplified MurmurHash and storing files as blocks in a compressed and hashed format, deduplicated.
+
+.SH COMMANDS
+.TP
+.B init
+Initialize a new Murmur vault in the current directory. This creates the required directory structure for storing blocks, snapshots, and indexes.
+.TP
+.B store \fI<path>\fR
+Store a file or directory into the Murmur vault. Files are split into blocks, deduplicated, compressed, and stored efficiently.
+.TP
+.B snapshot
+Create a snapshot of the current stored files and directories. Snapshots log the structure and content of the data for restoration.
+.TP
+.B restore \fI<snapshot>\fR
+Restore the files and directories from the specified snapshot. This reconstructs the data based on the snapshot's block references.
+.TP
+.B send \fI<remote>\fR
+Send the entire Murmur vault (blocks, snapshots, and indexes) to a remote directory using \fBrsync\fR.
+.TP
+.B fetch \fI<remote> <snapshot>\fR
+Fetch a Murmur vault from a remote directory and restore a specific snapshot. This includes fetching blocks, snapshots, and indexes.
+.TP
+.B help
+Display a brief overview of the commands.
+
+.SH EXAMPLES
+.TP
+Initialize a new Murmur vault:
+.EX
+$ murmur init
+.EE
+.TP
+Store a directory:
+.EX
+$ murmur store my_project
+.EE
+.TP
+Create a snapshot:
+.EX
+$ murmur snapshot
+.EE
+.TP
+Restore from a snapshot:
+.EX
+$ murmur restore snapshot_1234567890.snap
+.EE
+.TP
+Send the vault to a remote server:
+.EX
+$ murmur send user@remote:/path/to/vault
+.EE
+.TP
+Fetch a vault and restore a snapshot:
+.EX
+$ murmur fetch user@remote:/path/to/vault snapshot_1234567890.snap
+.EE
+
+.SH FILES
+.TP
+.I .murmur/
+Directory containing the Murmur vault, including blocks, snapshots, and indexes.
+.TP
+.I .murmur/blocks/
+Contains deduplicated and compressed blocks of stored data.
+.TP
+.I .murmur/snapshots/
+Stores snapshot metadata, which references stored blocks.
+.TP
+.I .murmur/index/
+Holds index files mapping files to their corresponding blocks.
+
+.SH BUGS
+Report bugs to the project repository or maintainers.
+
+.SH AUTHOR
+By ITHAS.
+
+.SH SEE ALSO
+.BR rsync (1),
+.BR gzip (1)

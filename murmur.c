@@ -14,39 +14,39 @@
 #define SNAPSHOTS_DIR ".murmur/snapshots"
 #define INDEX_DIR ".murmur/index"
 
-// MurmurHash function placeholder
+// simplified MurmurHash
 uint32_t murmurhash(const void *key, int len, uint32_t seed);
 
-// Utility to ensure directories exist
-void ensure_directory(const char *path) {
+// 
+void verify_dir(const char *path) {
     char temp_path[512];
     snprintf(temp_path, sizeof(temp_path), "%s", path);
 
-    char *p = temp_path + 1; // Skip the first '/'
+    char *p = temp_path + 1; // no first '/'
     while ((p = strchr(p, '/')) != NULL) {
         *p = '\0';
-        mkdir(temp_path, 0755); // Create intermediate directories
+        mkdir(temp_path, 0755); // create intermediate directories
         *p++ = '/';
     }
-    mkdir(temp_path, 0755); // Create the full path
+    mkdir(temp_path, 0755); // create full path
 }
 
-// Check if a path is part of the vault (used to exclude during snapshot creation)
+// is path a part of "vault"?
 int is_in_vault(const char *path) {
     return (strstr(path, MURMUR_VAULT) != NULL);
 }
 
-// Initialize the vault structure
+// init vault structure
 void init_vault() {
-    ensure_directory(MURMUR_VAULT);
-    ensure_directory(BLOCKS_DIR);
-    ensure_directory(SNAPSHOTS_DIR);
-    ensure_directory(INDEX_DIR);
+    verify_dir(MURMUR_VAULT);
+    verify_dir(BLOCKS_DIR);
+    verify_dir(SNAPSHOTS_DIR);
+    verify_dir(INDEX_DIR);
 
     printf("[INFO] Initialized murmur vault in %s\n", MURMUR_VAULT);
 }
 
-// Recursively store files and directories
+// recursively store files and directories
 void store_file(const char *path) {
     struct stat path_stat;
     if (stat(path, &path_stat) == -1) {
@@ -55,7 +55,6 @@ void store_file(const char *path) {
     }
 
     if (S_ISDIR(path_stat.st_mode)) {
-        // Process directory recursively
         DIR *dir = opendir(path);
         if (!dir) {
             perror("[ERROR] Failed to open directory");
@@ -84,17 +83,17 @@ void store_file(const char *path) {
         char buffer[4096];
         size_t bytes_read;
 
-        // Create the `.index` file path (relative path based)
+        // .index file path
         char index_path[512];
         snprintf(index_path, sizeof(index_path), "%s/%s.index", INDEX_DIR, path);
 
-        // Ensure the parent directories of the `.index` file exist
+        // verify parent directories of the .index file exist
         char parent_dir[512];
         snprintf(parent_dir, sizeof(parent_dir), "%s", index_path);
         char *last_slash = strrchr(parent_dir, '/');
         if (last_slash) {
             *last_slash = '\0';
-            ensure_directory(parent_dir);
+            verify_dir(parent_dir);
             *last_slash = '/';
         }
 
@@ -105,7 +104,7 @@ void store_file(const char *path) {
             return;
         }
 
-        // Process file blocks
+        // processing file blocks
         while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
             uint32_t hash = murmurhash(buffer, bytes_read, 42);
             char block_path[256];
@@ -145,7 +144,7 @@ void store_file(const char *path) {
     }
 }
 
-// Recursively traverse directory and log to snapshot
+// recursive traversing of directory and log to snapshot
 void snapshot_recursive(FILE *snapshot_file, const char *relative_path) {
     DIR *dir = opendir(relative_path);
     if (!dir) {
@@ -218,7 +217,7 @@ void create_snapshot() {
     printf("[INFO] Snapshot created: %s\n", snapshot_name);
 }
 
-// Restore files and directories from a snapshot
+// restore files and directories from snapshot
 void restore_snapshot(const char *snapshot_name) {
     char snapshot_path[512];
     snprintf(snapshot_path, sizeof(snapshot_path), "%s/%s", SNAPSHOTS_DIR, snapshot_name);
@@ -297,7 +296,7 @@ void restore_snapshot(const char *snapshot_name) {
 void send_to_remote(const char *remote_path) {
     char command[512];
 
-    // Send blocks
+    // send blocks
     snprintf(command, sizeof(command), "rsync -av --progress %s/ %s/blocks/", BLOCKS_DIR, remote_path);
     printf("[DEBUG] Sending blocks to remote: %s\n", remote_path);
     if (system(command) != 0) {
@@ -306,7 +305,7 @@ void send_to_remote(const char *remote_path) {
     }
     printf("[INFO] Blocks sent successfully.\n");
 
-    // Send snapshots
+    // send snapshots
     snprintf(command, sizeof(command), "rsync -av --progress %s/ %s/snapshots/", SNAPSHOTS_DIR, remote_path);
     printf("[DEBUG] Sending snapshots to remote: %s\n", remote_path);
     if (system(command) != 0) {
@@ -315,7 +314,7 @@ void send_to_remote(const char *remote_path) {
     }
     printf("[INFO] Snapshots sent successfully.\n");
 
-    // Send indexes
+    // send indexes
     snprintf(command, sizeof(command), "rsync -av --progress %s/ %s/index/", INDEX_DIR, remote_path);
     printf("[DEBUG] Sending indexes to remote: %s\n", remote_path);
     if (system(command) != 0) {
@@ -328,7 +327,7 @@ void send_to_remote(const char *remote_path) {
 void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
     char command[512];
 
-    // Fetch blocks
+    // fetch blocks
     snprintf(command, sizeof(command), "rsync -av --progress %s/blocks/ %s", remote_path, BLOCKS_DIR);
     printf("[DEBUG] Fetching blocks from remote: %s\n", remote_path);
     if (system(command) != 0) {
@@ -337,7 +336,7 @@ void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
     }
     printf("[INFO] Blocks fetched successfully.\n");
 
-    // Fetch snapshots
+    // fetch snapshots
     snprintf(command, sizeof(command), "rsync -av --progress %s/snapshots/ %s", remote_path, SNAPSHOTS_DIR);
     printf("[DEBUG] Fetching snapshots from remote: %s\n", remote_path);
     if (system(command) != 0) {
@@ -346,7 +345,7 @@ void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
     }
     printf("[INFO] Snapshots fetched successfully.\n");
 
-    // Fetch indexes
+    // fetch indexes
     snprintf(command, sizeof(command), "rsync -av --progress %s/index/ %s", remote_path, INDEX_DIR);
     printf("[DEBUG] Fetching indexes from remote: %s\n", remote_path);
     if (system(command) != 0) {
@@ -355,7 +354,7 @@ void fetch_from_remote(const char *remote_path, const char *snapshot_name) {
     }
     printf("[INFO] Indexes fetched successfully.\n");
 
-    // Restore the specified snapshot
+    // restore specified snapshot
     char snapshot_path[512];
     snprintf(snapshot_path, sizeof(snapshot_path), "%s/%s", SNAPSHOTS_DIR, snapshot_name);
     printf("[DEBUG] Restoring snapshot: %s\n", snapshot_path);
